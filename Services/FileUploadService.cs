@@ -8,25 +8,26 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using System.Windows;
 
 namespace FileUploader.WPF.Services
 {
     public class FileUploadService
-        {
+    {
             private static log4net.ILog logger = log4net.LogManager.GetLogger("MainLog");
-            private const int CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+            private const int CHUNK_SIZE = 5 * 1024 * 1024; 
             private readonly HttpService _httpService;
             private readonly SemaphoreSlim _semaphore;
 
             public FileUploadService(string baseUrl)
             {
                 _httpService = new HttpService(baseUrl);
-                _semaphore = new SemaphoreSlim(30); // 最多30个并发上传
+                _semaphore = new SemaphoreSlim(30); 
             }
 
             public async Task<string> CalculateOptimizedHashAsync(string filePath)
             {
-                // 对于图片文件，只读取前1MB数据计算哈希
+                // 计算哈希
                 const int SAMPLE_SIZE = 1 * 1024 * 1024;
                 
                 using var md5 = MD5.Create();
@@ -80,6 +81,12 @@ namespace FileUploader.WPF.Services
             public async Task<bool> UploadFileAsync(string filePath, IProgress<UploadFileInfo> progress)
             {
                 var fileInfo = new FileInfo(filePath);
+
+                if (!fileInfo.Exists) {
+                    MessageBox.Show("所选文件不存在");
+                    return false;
+                }
+
                 var uploadInfo = new UploadFileInfo
                 {
                     originFileName = fileInfo.Name,
@@ -89,11 +96,11 @@ namespace FileUploader.WPF.Services
 
                 var stopwatch = new System.Diagnostics.Stopwatch();
                 stopwatch.Start();
-                
-                uploadInfo.md5 = await CalculateOptimizedHashAsync(filePath);
-                progress.Report(uploadInfo);
 
-                stopwatch.Stop();
+            uploadInfo.md5 = await CalculateOptimizedHashAsync(filePath);
+            progress.Report(uploadInfo);
+
+            stopwatch.Stop();
                 Trace.WriteLine($"哈希值计算时间：{stopwatch.ElapsedMilliseconds}ms");
                 logger.Info($"哈希值计算时间：{stopwatch.ElapsedMilliseconds}ms");
 
@@ -107,8 +114,8 @@ namespace FileUploader.WPF.Services
                     return true;
                 }
 
-            var stopwatch1 = new System.Diagnostics.Stopwatch();
-            stopwatch1.Start();
+                var stopwatch1 = new System.Diagnostics.Stopwatch();
+                stopwatch1.Start();
 
                 // 初始化分片上传
                 var initResult = await _httpService.PostAsync<ApiResponse<InitUploadResponse>>("/files/multipart/init", new
@@ -121,7 +128,7 @@ namespace FileUploader.WPF.Services
                     uploadInfo.chunkCount
                 });
 
-            //Console.WriteLine("上传成功后的回复：" + initResult);
+                //Console.WriteLine("上传成功后的回复：" + initResult);
                   
                 //if (initResult.Code != 200)
                 //    return false;
@@ -142,7 +149,7 @@ namespace FileUploader.WPF.Services
                     var task = UploadChunkAsync(chunk, initResult.Data.urls[chunk.Index], uploadInfo, progress);
                     tasks.Add(task);
 
-                    if (tasks.Count >= 3)
+                    if (tasks.Count >= 20)
                     {
                         await Task.WhenAny(tasks.ToArray());
                         tasks.RemoveAll(t => t.IsCompleted);
@@ -173,10 +180,13 @@ namespace FileUploader.WPF.Services
                     var success = await _httpService.PutFileChunkAsync(url, chunk.Data, "application/octet-stream");
                     if (success)
                     {
-                        uploadInfo.UploadedSize += chunk.Data.Length;
-                        uploadInfo.Progress = (int)((double)uploadInfo.UploadedSize / uploadInfo.size * 100);
-                        uploadInfo.UploadedParts.Add(chunk.Index);
-                        progress.Report(uploadInfo);
+                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            uploadInfo.UploadedSize += chunk.Data.Length;
+                            uploadInfo.Progress = (int)((double)uploadInfo.UploadedSize / uploadInfo.size * 100);
+                            uploadInfo.UploadedParts.Add(chunk.Index);
+                            progress.Report(uploadInfo);
+                        });
                     }
                 }
                 finally
@@ -184,5 +194,5 @@ namespace FileUploader.WPF.Services
                     _semaphore.Release();
                 }
             }
-        }
+    }
 }

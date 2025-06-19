@@ -20,19 +20,42 @@ namespace FileUploader.WPF.ViewModels
     {
         private readonly FileUploadService _uploadService;
 
-        public ObservableCollection<UploadFileInfo> Files { get; } = new();
+        public ObservableCollection<UploadFileInfo> Files { get; } = new ObservableCollection<UploadFileInfo>();
 
         public ICommand SelectFileCommand { get; }
+        public ICommand SelectSingleFileCommand { get; }
         public ICommand UploadCommand { get; }
 
         public MainWindowViewModel()
         {
             _uploadService = new FileUploadService("http://127.0.0.1:8080");
             SelectFileCommand = new RelayCommand(SelectFile);
+            SelectSingleFileCommand = new RelayCommand(SelectSingleFile);
             UploadCommand = new RelayCommand(Upload);
         }
 
         private void SelectFile()
+        {
+            var dialog = new OpenFolderDialog();
+            if (dialog.ShowDialog() == true)
+            {
+                string[] filePaths = Directory.GetFiles(dialog.FolderName);
+                foreach (string filePath in filePaths)
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    Files.Add(new UploadFileInfo
+                    {
+                        originFileName = fileInfo.FullName,
+                        size = fileInfo.Length,
+                        Status = "Ready",
+                        Progress = 0,
+                        md5 = string.Empty,
+                    });
+                }
+            }
+        }
+
+        private void SelectSingleFile()
         {
             var dialog = new OpenFileDialog();
             if (dialog.ShowDialog() == true)
@@ -69,6 +92,7 @@ namespace FileUploader.WPF.ViewModels
             }
 
         }
+
 
         public event PropertyChangedEventHandler PropertyChanged;
         protected virtual void OnPropertyChanged(string propertyName)
